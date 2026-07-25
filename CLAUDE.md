@@ -91,10 +91,18 @@ test-ids.
 
 ## CI / deploy — Vercel
 
-Vercel Git integration: every PR gets a **preview** deployment; merges to
-`master` deploy to **production**. Next.js is auto-detected — no `vercel.json`.
+Vercel Git integration is this repo's single pipeline: every PR gets a
+**preview** deployment; merges to `master` deploy to **production**. (Different
+CI per repo is a deliberate feature of this demo.)
+
+`vercel.json` overrides the build command so the deploy **is** the validation
+gate: `npm run lint && npm run typecheck && npm test && npm run build`. Any lint
+error, type error, or failing test fails the build and **blocks the deploy** —
+on both PR previews and production. Keep this chain green locally before pushing;
+it runs identically on Vercel.
+
 Set `BFF_URL` and `PERSON_ID` as Project Environment Variables in the Vercel
-dashboard. (Different CI per repo is a deliberate feature of this demo.)
+dashboard (server-side, not `NEXT_PUBLIC_*`).
 
 ## Git workflow
 

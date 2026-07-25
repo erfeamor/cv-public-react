@@ -84,6 +84,9 @@ TDD across every layer (a PR without tests is incomplete):
 ## Deploy — Vercel
 
 Vercel's Git integration builds and deploys automatically: every PR gets a
-preview deployment, and merges to `master` deploy to production. Next.js is
-auto-detected (no `vercel.json` needed). Set `BFF_URL` and `PERSON_ID` as
-Project Environment Variables in the Vercel dashboard.
+preview deployment, and merges to `master` deploy to production. Set `BFF_URL`
+and `PERSON_ID` as Project Environment Variables in the Vercel dashboard.
+
+`vercel.json` overrides the build command to `lint && typecheck && test &&
+build`, so the deploy doubles as the validation pipeline — a failing lint, type
+check, or test blocks the deployment on both previews and production.
