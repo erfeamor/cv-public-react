@@ -104,6 +104,19 @@ it runs identically on Vercel.
 Set `BFF_URL` and `PERSON_ID` as Project Environment Variables in the Vercel
 dashboard (server-side, not `NEXT_PUBLIC_*`).
 
+## Code review guidance
+
+Priorities, ranked:
+
+1. **Client/server boundary.** Any new `'use client'` directive that isn't justified by genuine browser interactivity — Server Components are the default here, and the whole ISR/ decoupling story depends on minimizing client-shipped code.
+2. **`NEXT_PUBLIC_*` misuse.** `BFF_URL`/`PERSON_ID` (or any future env var read outside `src/composition/`) must never be prefixed `NEXT_PUBLIC_*` — that would ship a server-only value to the client.
+3. **ISR literal drift.** `export const revalidate = <n>` in a page and `REVALIDATE_SECONDS` in the composition root must match — Next requires the former to be a static literal, so review both sides on any change.
+4. Domain-service calls appearing anywhere outside `src/infrastructure/BffCvRepository.ts` — this app deliberately never talks to cv-domain-service directly.
+
+Don't flag:
+- The `Cv` domain type already covering all four sections while only `PersonHeader` renders — that's intentional forward-typing, not dead code.
+- The duplication between the `revalidate` literal and `REVALIDATE_SECONDS` — it's a documented, unavoidable Next.js constraint, not an oversight (unless a change updates one and not the other).
+
 ## Git workflow
 
 `master` is protected — feature branch (`feat/…`) → push → PR via `gh`.
