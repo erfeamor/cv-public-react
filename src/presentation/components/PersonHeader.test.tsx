@@ -19,12 +19,37 @@ describe('PersonHeader', () => {
     expect(screen.getByText('Builds reliable systems.')).toBeInTheDocument();
   });
 
-  it('omits optional fields when they are absent', () => {
-    render(<PersonHeader person={{ name: 'Solo Person' }} />);
+  // Contract rule 7 (T-209): an optional field is a PRESENT key valued `null`,
+  // never a missing one -- so this is what the BFF actually sends for a person
+  // with no headline/location/summary. The fixture used to be
+  // `{ name: 'Solo Person' }`, a shape the BFF does not produce and which only
+  // typechecked because these fields were `?:` (T-405).
+  it('omits optional fields when they are null, without rendering "null"', () => {
+    const person: Person = {
+      name: 'Solo Person',
+      headline: null,
+      location: null,
+      summary: null,
+    };
+
+    render(<PersonHeader person={person} />);
 
     expect(screen.getByRole('heading', { name: 'Solo Person' })).toBeInTheDocument();
-    expect(screen.queryByText('Backend Engineer')).not.toBeInTheDocument();
-    expect(screen.queryByText('Madrid')).not.toBeInTheDocument();
-    expect(screen.queryByText('Builds reliable systems.')).not.toBeInTheDocument();
+    // NOTE: this test used to also assert that 'Backend Engineer', 'Madrid' and
+    // 'Builds reliable systems.' are absent. Those strings only ever exist in
+    // the OTHER test's fixture, so they can never appear in this render path
+    // whether the component handles null correctly or not -- three assertions
+    // with no discriminating power. Dropped (review round 1) rather than
+    // carried forward: this task family exists because of checks that pass for
+    // reasons unrelated to what they claim to measure.
+    //
+    // This is the assertion that does the work: it fails if the truthiness
+    // guard is dropped, because an unconditional <p> renders EMPTY for a null
+    // child. Verified by probe -- removing the guard fails this test.
+    expect(document.querySelectorAll('p')).toHaveLength(0);
+    // Weaker, and kept only for the case the line above cannot see: React
+    // renders `{null}` as nothing, so a null child leaves no text -- but
+    // INTERPOLATING it (`{`${person.headline}`}`) renders the literal "null".
+    expect(screen.queryByText('null')).not.toBeInTheDocument();
   });
 });
