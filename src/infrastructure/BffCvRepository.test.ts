@@ -80,6 +80,10 @@ describe('BffCvRepository', () => {
     expect(cv.projects[0].name).toBe('cv-project');
   });
 
+  // Guard order matters: `(dto.experiences ?? []).map(...)` is correct, while
+  // `dto.experiences.map(...) ?? []` evaluates `.map` BEFORE the guard and
+  // throws on an absent array. This payload carries no section keys at all, so
+  // the wrong shape fails here rather than in production.
   it('defaults missing section arrays to empty', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -167,6 +171,121 @@ describe('BffCvRepository', () => {
     // Sections still map; nulls did not knock out the arrays.
     expect(cv.experiences).toHaveLength(1);
     expect(cv.skills[0].proficiency).toBe('ADVANCED');
+  });
+
+
+  // ------------------------------------------------------------------ T-407
+  // Rule 7 says the key is ALWAYS present, so the domain types declare
+  // `string | null` (T-405). `toCv` is the one place that assumption is made
+  // safe: it is this app's anti-corruption layer, and normalizing a producer's
+  // omission into the domain's own empty value never leaves the process. (The
+  // same `?? null` is FORBIDDEN in cv-bff-node per T-210 — the BFF is a
+  // pass-through and would fabricate a null on the wire.)
+  //
+  // Keys below are genuinely ABSENT, not null and not explicit undefined --
+  // what `JSON.parse` yields from a producer that dropped a key. Thirteen
+  // fields are typed `string | null`: ten rule-7 optionals plus the three
+  // rule-3 `endDate`s, whose null means "current" and whose undefined would
+  // silently stop a current role being rendered as "Present".
+  const omittedKeys = {
+    name: 'Jane Doe',
+    // headline, location, summary: absent
+    experiences: [
+      // location, endDate, description: absent
+      { company: 'ACME', role: 'Engineer', startDate: '2022-01-01' },
+      { company: 'Globex', role: 'Lead', startDate: '2020-03-01' },
+    ],
+    // fieldOfStudy, endDate: absent
+    education: [{ institution: 'UNED', degree: 'BSc', startDate: '2015-09-01' }],
+    // category: absent
+    skills: [{ name: 'TypeScript', proficiency: 'ADVANCED' }],
+    // description, repoUrl, startDate, endDate: absent
+    projects: [{ name: 'cv-project' }],
+  };
+
+  async function getCvFrom(json: unknown): Promise<Cv> {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => json });
+    return repository().getCv('1');
+  }
+
+  // One case per field so a partial fix cannot hide behind an earlier failure:
+  // against master all thirteen fail, because master copies the section arrays
+  // verbatim and never maps their elements at all.
+  describe.each<[string, (cv: Cv) => string | null]>([
+    ['headline', (cv) => cv.headline],
+    ['location', (cv) => cv.location],
+    ['summary', (cv) => cv.summary],
+    ['experiences[0].location', (cv) => cv.experiences[0].location],
+    ['experiences[0].endDate', (cv) => cv.experiences[0].endDate],
+    ['experiences[0].description', (cv) => cv.experiences[0].description],
+    ['education[0].fieldOfStudy', (cv) => cv.education[0].fieldOfStudy],
+    ['education[0].endDate', (cv) => cv.education[0].endDate],
+    ['skills[0].category', (cv) => cv.skills[0].category],
+    ['projects[0].description', (cv) => cv.projects[0].description],
+    ['projects[0].repoUrl', (cv) => cv.projects[0].repoUrl],
+    ['projects[0].startDate', (cv) => cv.projects[0].startDate],
+    ['projects[0].endDate', (cv) => cv.projects[0].endDate],
+  ])('an omitted contract-optional key', (field, read) => {
+    it(`becomes null, not undefined, at ${field}`, async () => {
+      // toBeNull(), never toBeFalsy(): it fails on undefined too.
+      expect(read(await getCvFrom(omittedKeys))).toBeNull();
+    });
+  });
+
+  it('normalizes every element of a section, not just the first', async () => {
+    const cv = await getCvFrom(omittedKeys);
+
+    expect(cv.experiences).toHaveLength(2);
+    expect(cv.experiences[1].company).toBe('Globex');
+    expect(cv.experiences[1].location).toBeNull();
+    expect(cv.experiences[1].endDate).toBeNull();
+    expect(cv.experiences[1].description).toBeNull();
+  });
+
+  // `?? null` vs `|| null`: they disagree on exactly one input, the legitimate
+  // empty string. `'' ?? null` is `''`; `'' || null` is `null`, erasing a real
+  // value. One `''` per mapping site (the Person literal + four element
+  // mappers). This does NOT fail against master -- master does no scalar
+  // coercion, so `''` already survives there; it exists to fail against a
+  // plausible wrong fix, and was verified by mutating each `??` to `||`.
+  const emptyStrings: Cv = {
+    name: 'Jane Doe',
+    headline: '',
+    location: '',
+    summary: '',
+    experiences: [
+      {
+        company: 'ACME',
+        role: 'Engineer',
+        location: '',
+        startDate: '2022-01-01',
+        endDate: '',
+        description: '',
+      },
+    ],
+    education: [
+      { institution: 'UNED', degree: 'BSc', fieldOfStudy: '', startDate: '2015-09-01', endDate: '' },
+    ],
+    skills: [{ name: 'TypeScript', category: '', proficiency: 'ADVANCED' }],
+    projects: [{ name: 'cv-project', description: '', repoUrl: '', startDate: '', endDate: '' }],
+  };
+
+  it('keeps a legitimate empty string instead of collapsing it to null', async () => {
+    const cv = await getCvFrom(emptyStrings);
+
+    expect(cv.headline).toBe('');
+    expect(cv.location).toBe('');
+    expect(cv.summary).toBe('');
+    expect(cv.experiences[0].location).toBe('');
+    expect(cv.experiences[0].endDate).toBe('');
+    expect(cv.experiences[0].description).toBe('');
+    expect(cv.education[0].fieldOfStudy).toBe('');
+    expect(cv.education[0].endDate).toBe('');
+    expect(cv.skills[0].category).toBe('');
+    expect(cv.projects[0].description).toBe('');
+    expect(cv.projects[0].repoUrl).toBe('');
+    expect(cv.projects[0].startDate).toBe('');
+    expect(cv.projects[0].endDate).toBe('');
   });
 
   it('throws a typed CvFetchError on a non-ok response', async () => {
