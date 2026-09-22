@@ -61,7 +61,7 @@ export class BffCvRepository implements CvRepository {
   ) {}
 
   async getCv(personId: string): Promise<Cv> {
-    const url = `${this.baseUrl}/api/v1/people/${personId}/cv`;
+    const url = `${this.baseUrl}/bff/api/v1/people/${personId}/cv`;
     const response = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate: this.revalidateSeconds },

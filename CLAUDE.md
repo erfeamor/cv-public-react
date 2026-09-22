@@ -1,7 +1,7 @@
 # CLAUDE.md — cv-public-react
 
 Public CV site for cv-project: **Next.js 14 (App Router) + React 18 + TypeScript**,
-Node 20. It consumes the **cv-bff-node aggregate** `GET /api/v1/people/:id/cv`,
+Node 20. It consumes the **cv-bff-node aggregate** `GET /bff/api/v1/people/:id/cv`,
 renders via **ISR** (statically generated, background-revalidated every 60s), and
 deliberately **does NOT talk to cv-domain-service directly** at runtime — the BFF
 is the only upstream. Sibling to cv-public-vanilla (the zero-framework take);
@@ -40,7 +40,7 @@ genuinely needs browser interactivity).
   (no Next, no fetch, no env). Thin but real — the seam for future cross-section
   logic (ordering, filtering empty sections) without touching other layers.
 - `src/infrastructure/` — `BffCvRepository implements CvRepository`: server-side
-  `fetch` of `${BFF_URL}/api/v1/people/:id/cv` with `next: { revalidate }`, maps
+  `fetch` of `${BFF_URL}/bff/api/v1/people/:id/cv` with `next: { revalidate }`, maps
   the payload to the domain `Cv`, throws a typed `CvFetchError` on non-2xx.
 - `src/composition/container.ts` — the **composition root**: the ONLY module that
   reads env vars and wires `BffCvRepository` into the use case. Nothing above it
