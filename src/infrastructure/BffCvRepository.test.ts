@@ -58,7 +58,7 @@ describe('BffCvRepository', () => {
     await repository().getCv('1');
 
     const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe('http://bff.test/api/v1/people/1/cv');
+    expect(url).toBe('http://bff.test/bff/api/v1/people/1/cv');
     expect(options.next).toEqual({ revalidate: 60 });
   });
 

@@ -58,7 +58,7 @@ dependency rule points inward: `domain ← application ← composition → infra
 - `src/application/` — `loadCv(repository, personId)`: framework-free use case,
   the seam for future ordering/filtering logic.
 - `src/infrastructure/` — `BffCvRepository` implements `CvRepository`, fetching
-  `${BFF_URL}/api/v1/people/:id/cv` server-side, mapping the payload to the
+  `${BFF_URL}/bff/api/v1/people/:id/cv` server-side, mapping the payload to the
   domain `Cv`, and throwing a typed `CvFetchError` on non-2xx.
 - `src/composition/` — composition root: the **only** place env vars are read;
   wires `BffCvRepository` into the use case.
