@@ -1,4 +1,4 @@
-import { BffCvRepository, CvFetchError } from './BffCvRepository';
+import { BffCvRepository, CvFetchError, CvPayloadError } from './BffCvRepository';
 import { Cv } from '../domain/cv';
 
 describe('BffCvRepository', () => {
@@ -104,10 +104,10 @@ describe('BffCvRepository', () => {
   // copies those values verbatim (T-210), so this is exactly what production
   // sends for a sparsely-filled CV.
   //
-  // The fixture is annotated `Cv` deliberately. `BffCvRepository` casts the
-  // response (`as CvDto`) with no runtime validation, so nothing between the
-  // wire and the domain type can catch a null landing in a `string`-typed
-  // field. Type-checking the fixture is the only place that check can live --
+  // The fixture is annotated `Cv` deliberately, so the compiler checks it
+  // against the domain types. When this was written `BffCvRepository` cast the
+  // response with no runtime validation (T-409 added it), which made this the
+  // only place a null landing in a `string`-typed field could be caught --
   // and before T-405 it did not compile: `Skill.category` and
   // `Project.startDate` were required non-null strings, and the other eight
   // optionals were `?:`, claiming a key that is always present may be absent.
@@ -183,24 +183,25 @@ describe('BffCvRepository', () => {
   // pass-through and would fabricate a null on the wire.)
   //
   // Keys below are genuinely ABSENT, not null and not explicit undefined --
-  // what `JSON.parse` yields from a producer that dropped a key. Thirteen
-  // fields are typed `string | null`: ten rule-7 optionals plus the three
-  // rule-3 `endDate`s, whose null means "current" and whose undefined would
-  // silently stop a current role being rendered as "Present".
+  // what `JSON.parse` yields from a producer that dropped a key. Ten fields are
+  // rule-7 optionals, whose null is merely the empty value, so an absent key is
+  // normalized to it. The three rule-3 `endDate`s are NOT among them: their
+  // null means "current", so an absent one is a contract violation the adapter
+  // rejects (T-409, named tests below) -- this fixture sends them present-null.
   const omittedKeys = {
     name: 'Jane Doe',
     // headline, location, summary: absent
     experiences: [
-      // location, endDate, description: absent
-      { company: 'ACME', role: 'Engineer', startDate: '2022-01-01' },
-      { company: 'Globex', role: 'Lead', startDate: '2020-03-01' },
+      // location, description: absent
+      { company: 'ACME', role: 'Engineer', startDate: '2022-01-01', endDate: null },
+      { company: 'Globex', role: 'Lead', startDate: '2020-03-01', endDate: null },
     ],
-    // fieldOfStudy, endDate: absent
-    education: [{ institution: 'UNED', degree: 'BSc', startDate: '2015-09-01' }],
+    // fieldOfStudy: absent
+    education: [{ institution: 'UNED', degree: 'BSc', startDate: '2015-09-01', endDate: null }],
     // category: absent
     skills: [{ name: 'TypeScript', proficiency: 'ADVANCED' }],
-    // description, repoUrl, startDate, endDate: absent
-    projects: [{ name: 'cv-project' }],
+    // description, repoUrl, startDate: absent
+    projects: [{ name: 'cv-project', endDate: null }],
   };
 
   async function getCvFrom(json: unknown): Promise<Cv> {
@@ -209,22 +210,20 @@ describe('BffCvRepository', () => {
   }
 
   // One case per field so a partial fix cannot hide behind an earlier failure:
-  // against master all thirteen fail, because master copies the section arrays
-  // verbatim and never maps their elements at all.
+  // against T-407's base all of these failed, because it copied the section
+  // arrays verbatim and never mapped their elements at all. The three
+  // `endDate` rows that used to sit here are the named T-409 tests below.
   describe.each<[string, (cv: Cv) => string | null]>([
     ['headline', (cv) => cv.headline],
     ['location', (cv) => cv.location],
     ['summary', (cv) => cv.summary],
     ['experiences[0].location', (cv) => cv.experiences[0].location],
-    ['experiences[0].endDate', (cv) => cv.experiences[0].endDate],
     ['experiences[0].description', (cv) => cv.experiences[0].description],
     ['education[0].fieldOfStudy', (cv) => cv.education[0].fieldOfStudy],
-    ['education[0].endDate', (cv) => cv.education[0].endDate],
     ['skills[0].category', (cv) => cv.skills[0].category],
     ['projects[0].description', (cv) => cv.projects[0].description],
     ['projects[0].repoUrl', (cv) => cv.projects[0].repoUrl],
     ['projects[0].startDate', (cv) => cv.projects[0].startDate],
-    ['projects[0].endDate', (cv) => cv.projects[0].endDate],
   ])('an omitted contract-optional key', (field, read) => {
     it(`becomes null, not undefined, at ${field}`, async () => {
       // toBeNull(), never toBeFalsy(): it fails on undefined too.
@@ -286,6 +285,217 @@ describe('BffCvRepository', () => {
     expect(cv.projects[0].repoUrl).toBe('');
     expect(cv.projects[0].startDate).toBe('');
     expect(cv.projects[0].endDate).toBe('');
+  });
+
+  // ------------------------------------------------------------------ T-409
+  // The adapter VALIDATES before it normalizes. Every contract violation is one
+  // typed CvPayloadError naming the JSON path, thrown here at the boundary --
+  // not as an `Invalid Date` three layers up. A payload is accepted whole or
+  // rejected whole: there is no partial CV.
+
+  type Fixture = {
+    [key: string]: unknown;
+    experiences: Record<string, unknown>[];
+    education: Record<string, unknown>[];
+    skills: Record<string, unknown>[];
+    projects: Record<string, unknown>[];
+  };
+
+  /** A fresh, contract-valid payload to break in exactly one place. */
+  function valid(): Fixture {
+    return JSON.parse(JSON.stringify(payload)) as Fixture;
+  }
+
+  async function expectPayloadError(json: unknown, path: string): Promise<void> {
+    const failure = getCvFrom(json);
+    await expect(failure).rejects.toBeInstanceOf(CvPayloadError);
+    await expect(failure).rejects.toMatchObject({ name: 'CvPayloadError', path });
+  }
+
+  // `endDate` is the one field where `null` is a positive claim (rule 3:
+  // "current"), so these three are named, not rows in the table above. T-407
+  // normalized an absent `endDate` to null, which made a producer that dropped
+  // the key on a finished 2020-2022 role render it as "Present" -- a wrong fact
+  // on a public CV. The adapter can only tell "absent" (producer bug) from
+  // "present and null" (a current role) before normalizing, so it does.
+  describe('endDate: absent is a producer bug, present-null means "current"', () => {
+    it('rejects a payload with experiences[].endDate absent, rather than silently asserting "current"', async () => {
+      const json = valid();
+      delete json.experiences[0].endDate;
+      await expectPayloadError(json, 'experiences[0].endDate');
+    });
+
+    it('rejects a payload with education[].endDate absent, rather than silently asserting "current"', async () => {
+      const json = valid();
+      delete json.education[0].endDate;
+      await expectPayloadError(json, 'education[0].endDate');
+    });
+
+    it('rejects a payload with projects[].endDate absent, rather than silently asserting "current"', async () => {
+      const json = valid();
+      delete json.projects[0].endDate;
+      await expectPayloadError(json, 'projects[0].endDate');
+    });
+
+    it('keeps a present-null endDate as null ("current") on all three sections', async () => {
+      const json = valid();
+      json.experiences[0].endDate = null;
+      json.education[0].endDate = null;
+      json.projects[0].endDate = null;
+
+      const cv = await getCvFrom(json);
+
+      expect(cv.experiences[0].endDate).toBeNull();
+      expect(cv.education[0].endDate).toBeNull();
+      expect(cv.projects[0].endDate).toBeNull();
+    });
+  });
+
+  // Required per docs/api-contract.md: the `Required:` lists for experience,
+  // education and project, plus the person's and the catalog skill's `name`.
+  // Each is broken three ways -- absent, null, wrong primitive -- because a
+  // presence check alone would let `startDate: 123` through.
+  describe.each<[string, (json: Fixture) => [Record<string, unknown>, string]]>([
+    ['name', (json) => [json, 'name']],
+    ['experiences[0].company', (json) => [json.experiences[0], 'company']],
+    ['experiences[0].role', (json) => [json.experiences[0], 'role']],
+    ['experiences[0].startDate', (json) => [json.experiences[0], 'startDate']],
+    ['education[0].institution', (json) => [json.education[0], 'institution']],
+    ['education[0].degree', (json) => [json.education[0], 'degree']],
+    ['education[0].startDate', (json) => [json.education[0], 'startDate']],
+    ['skills[0].name', (json) => [json.skills[0], 'name']],
+    ['projects[0].name', (json) => [json.projects[0], 'name']],
+  ])('the required field %s', (path, locate) => {
+    it('rejects the payload when the key is absent', async () => {
+      const json = valid();
+      const [target, key] = locate(json);
+      delete target[key];
+      await expectPayloadError(json, path);
+    });
+
+    it('rejects the payload when the value is null', async () => {
+      const json = valid();
+      const [target, key] = locate(json);
+      target[key] = null;
+      await expectPayloadError(json, path);
+    });
+
+    it('rejects the payload when the value is not a string', async () => {
+      const json = valid();
+      const [target, key] = locate(json);
+      target[key] = 123;
+      await expectPayloadError(json, path);
+    });
+  });
+
+  // An unknown proficiency rejects the WHOLE payload (H1, 2026-09-26), not just
+  // that skill: one rule, one test shape. A fifth enum value reaching a
+  // `Record<Proficiency, ...>` lookup would yield undefined with no type error.
+  describe('proficiency', () => {
+    it.each(['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'])('accepts %s', async (level) => {
+      const json = valid();
+      json.skills[0].proficiency = level;
+      expect((await getCvFrom(json)).skills[0].proficiency).toBe(level);
+    });
+
+    it.each<[string, unknown]>([
+      ['an unknown enum value', 'MASTER'],
+      ['a known value in the wrong case', 'advanced'],
+      ['an empty string', ''],
+      ['null', null],
+      // An inherited Object.prototype key: a naive `value in LOOKUP` check
+      // would accept it, so membership must be an own-property check.
+      ['an inherited object key', 'toString'],
+      ['another inherited object key', 'constructor'],
+    ])('rejects the whole payload for %s', async (_label, value) => {
+      const json = valid();
+      json.skills[0].proficiency = value;
+      await expectPayloadError(json, 'skills[0].proficiency');
+    });
+
+    it('rejects the whole payload when proficiency is absent', async () => {
+      const json = valid();
+      delete json.skills[0].proficiency;
+      await expectPayloadError(json, 'skills[0].proficiency');
+    });
+  });
+
+  // Decision (T-409): an optional field that is PRESENT but neither a string
+  // nor null is a contract violation like any other -- it is rejected, not
+  // coerced. Only absence is normalized (T-407), because only absence has a
+  // neutral reading.
+  describe.each<[string, (json: Fixture) => [Record<string, unknown>, string]]>([
+    ['headline', (json) => [json, 'headline']],
+    ['experiences[0].location', (json) => [json.experiences[0], 'location']],
+    ['experiences[0].endDate', (json) => [json.experiences[0], 'endDate']],
+    ['education[0].fieldOfStudy', (json) => [json.education[0], 'fieldOfStudy']],
+    ['skills[0].category', (json) => [json.skills[0], 'category']],
+    ['projects[0].startDate', (json) => [json.projects[0], 'startDate']],
+    ['projects[0].repoUrl', (json) => [json.projects[0], 'repoUrl']],
+  ])('the nullable field %s', (path, locate) => {
+    it('rejects the payload when the value is neither a string nor null', async () => {
+      const json = valid();
+      const [target, key] = locate(json);
+      target[key] = 42;
+      await expectPayloadError(json, path);
+    });
+  });
+
+  // Decision (T-409): an absent OR null section is the empty list (T-407's
+  // `?? []`, unchanged); a present non-array section, or a non-object element,
+  // is rejected.
+  describe('section shape', () => {
+    it.each(['experiences', 'education', 'skills', 'projects'])(
+      'rejects the payload when %s is present but not an array',
+      async (section) => {
+        const json = valid();
+        json[section] = { 0: 'not a list' };
+        await expectPayloadError(json, section);
+      },
+    );
+
+    it('treats a null section like an absent one: the empty list', async () => {
+      const cv = await getCvFrom({ name: 'Solo Person', experiences: null });
+      expect(cv.experiences).toEqual([]);
+    });
+
+    it('rejects the payload when a section element is not an object', async () => {
+      const json = valid();
+      (json.education as unknown[])[0] = 'UNED';
+      await expectPayloadError(json, 'education[0]');
+    });
+
+    it('rejects a body that is not a JSON object at all', async () => {
+      await expectPayloadError(['Jane Doe'], '$');
+      await expectPayloadError(null, '$');
+    });
+  });
+
+  // A 2xx that is not JSON at all (e.g. a proxy's 200 HTML maintenance page)
+  // is a contract-violating body like any other. If it escaped as a bare
+  // SyntaxError, app/page.tsx would render the alert and ISR would cache that
+  // over the last good page -- the outcome CvPayloadError exists to prevent.
+  it('rejects a 2xx body that is not valid JSON, keeping the parse error as cause', async () => {
+    const parseError = new SyntaxError('Unexpected token < in JSON at position 0');
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw parseError;
+      },
+    });
+
+    const failure = repository().getCv('1');
+
+    await expect(failure).rejects.toBeInstanceOf(CvPayloadError);
+    await expect(failure).rejects.toMatchObject({ path: '$', cause: parseError });
+    await expect(failure).rejects.toThrow(/not valid JSON/);
+  });
+
+  it('names the path and the offending value in the error message', async () => {
+    const json = valid();
+    json.skills[0].proficiency = 'MASTER';
+    await expect(getCvFrom(json)).rejects.toThrow(/skills\[0\]\.proficiency.*"MASTER"/);
   });
 
   it('throws a typed CvFetchError on a non-ok response', async () => {
