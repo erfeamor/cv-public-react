@@ -403,6 +403,10 @@ describe('BffCvRepository', () => {
       ['a known value in the wrong case', 'advanced'],
       ['an empty string', ''],
       ['null', null],
+      // An inherited Object.prototype key: a naive `value in LOOKUP` check
+      // would accept it, so membership must be an own-property check.
+      ['an inherited object key', 'toString'],
+      ['another inherited object key', 'constructor'],
     ])('rejects the whole payload for %s', async (_label, value) => {
       const json = valid();
       json.skills[0].proficiency = value;
@@ -465,6 +469,27 @@ describe('BffCvRepository', () => {
       await expectPayloadError(['Jane Doe'], '$');
       await expectPayloadError(null, '$');
     });
+  });
+
+  // A 2xx that is not JSON at all (e.g. a proxy's 200 HTML maintenance page)
+  // is a contract-violating body like any other. If it escaped as a bare
+  // SyntaxError, app/page.tsx would render the alert and ISR would cache that
+  // over the last good page -- the outcome CvPayloadError exists to prevent.
+  it('rejects a 2xx body that is not valid JSON, keeping the parse error as cause', async () => {
+    const parseError = new SyntaxError('Unexpected token < in JSON at position 0');
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw parseError;
+      },
+    });
+
+    const failure = repository().getCv('1');
+
+    await expect(failure).rejects.toBeInstanceOf(CvPayloadError);
+    await expect(failure).rejects.toMatchObject({ path: '$', cause: parseError });
+    await expect(failure).rejects.toThrow(/not valid JSON/);
   });
 
   it('names the path and the offending value in the error message', async () => {

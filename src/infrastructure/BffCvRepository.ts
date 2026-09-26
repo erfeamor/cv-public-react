@@ -31,8 +31,9 @@ export class CvPayloadError extends Error {
   constructor(
     readonly path: string,
     problem: string,
+    options?: { cause?: unknown },
   ) {
-    super(`Invalid CV payload from the BFF at ${path}: ${problem}`);
+    super(`Invalid CV payload from the BFF at ${path}: ${problem}`, options);
     this.name = 'CvPayloadError';
   }
 }
@@ -44,7 +45,8 @@ export class CvPayloadError extends Error {
  *
  * VALIDATED — any violation throws one CvPayloadError naming the JSON path, and
  * the whole payload is rejected (there is no partial Cv):
- * - The body is an object; each present section is an array of objects.
+ * - The body parses as JSON and is an object; each present section is an
+ *   array of objects.
  * - Required fields (the contract's `Required:` lists, plus the person's and
  *   the skill's `name`) are present strings. Presence and primitive type only:
  *   ISO-8601 date format and non-emptiness are NOT checked.
@@ -67,7 +69,20 @@ export class CvPayloadError extends Error {
  */
 type Json = Record<string, unknown>;
 
-const PROFICIENCIES: readonly Proficiency[] = ['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'];
+// A Record, not an array, so it is exhaustive at compile time: adding or
+// removing a Proficiency literal without updating this line is a type error.
+const PROFICIENCIES: Record<Proficiency, true> = {
+  BEGINNER: true,
+  INTERMEDIATE: true,
+  ADVANCED: true,
+  EXPERT: true,
+};
+
+// Own-property check, never `value in PROFICIENCIES`: `in` also matches keys
+// inherited from Object.prototype, such as "toString" and "constructor".
+function isProficiency(value: unknown): value is Proficiency {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(PROFICIENCIES, value);
+}
 
 function describeValue(value: unknown): string {
   return value === undefined ? 'absent' : `got ${JSON.stringify(value)}`;
@@ -114,13 +129,13 @@ function endDate(obj: Json, path: string): string | null {
 
 function proficiency(obj: Json, path: string): Proficiency {
   const value = obj.proficiency;
-  if (!PROFICIENCIES.includes(value as Proficiency)) {
+  if (!isProficiency(value)) {
     throw new CvPayloadError(
       at(path, 'proficiency'),
-      `expected one of ${PROFICIENCIES.join(' | ')}, ${describeValue(value)}`,
+      `expected one of ${Object.keys(PROFICIENCIES).join(' | ')}, ${describeValue(value)}`,
     );
   }
-  return value as Proficiency;
+  return value;
 }
 
 function toExperience(obj: Json, path: string): Experience {
@@ -223,6 +238,16 @@ export class BffCvRepository implements CvRepository {
       );
     }
 
-    return toCv(await response.json());
+    // A 2xx body that is not JSON (e.g. a proxy's 200 HTML maintenance page)
+    // violates the contract too, so it must surface as CvPayloadError: a bare
+    // SyntaxError would be rendered as the alert and cached over the last
+    // good page.
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch (error) {
+      throw new CvPayloadError('$', 'body is not valid JSON', { cause: error });
+    }
+    return toCv(body);
   }
 }

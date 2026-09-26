@@ -58,4 +58,28 @@ describe('HomePage', () => {
 
     await expect(HomePage()).rejects.toBe(error);
   });
+
+  // End to end through the real adapter (only fetch is faked): a 2xx HTML
+  // body must reach the page as CvPayloadError and propagate, not be caught
+  // as a generic failure and rendered as the alert.
+  it('rethrows when the BFF answers 2xx with a body that is not JSON', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError('Unexpected token < in JSON at position 0');
+      },
+    });
+    const { getCv: realGetCv } = jest.requireActual<typeof import('../src/composition/container')>(
+      '../src/composition/container',
+    );
+    mockedGetCv.mockImplementation(realGetCv);
+
+    try {
+      await expect(HomePage()).rejects.toBeInstanceOf(CvPayloadError);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });
