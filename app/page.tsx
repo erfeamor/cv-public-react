@@ -1,5 +1,9 @@
 import { CvPayloadError, getCv } from '../src/composition/container';
+import EducationSection from '../src/presentation/components/EducationSection';
+import ExperienceSection from '../src/presentation/components/ExperienceSection';
 import PersonHeader from '../src/presentation/components/PersonHeader';
+import ProjectsSection from '../src/presentation/components/ProjectsSection';
+import SkillsSection from '../src/presentation/components/SkillsSection';
 
 /**
  * ISR: statically generate this page and revalidate it in the background every
@@ -11,7 +15,9 @@ export const revalidate = 60;
 
 /**
  * Home page — a Server Component. It calls the composition root (which reads env
- * and wires the BFF adapter) and the use case, then renders the person head.
+ * and wires the BFF adapter) and the use case, then renders the person head and
+ * the four CV sections from that one payload. Each section renders nothing for
+ * an empty array, and every section keeps the order the BFF served.
  * The fetch runs at build/revalidation time on the server; nothing here ships
  * to the client, and cv-domain-service is never contacted directly.
  */
@@ -34,5 +40,13 @@ export default async function HomePage() {
     );
   }
 
-  return <PersonHeader person={cv} />;
+  return (
+    <>
+      <PersonHeader person={cv} />
+      <ExperienceSection experiences={cv.experiences} />
+      <EducationSection education={cv.education} />
+      <SkillsSection skills={cv.skills} />
+      <ProjectsSection projects={cv.projects} />
+    </>
+  );
 }

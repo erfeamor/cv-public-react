@@ -32,6 +32,40 @@ describe('HomePage', () => {
     expect(screen.getByRole('heading', { name: 'Jane Doe' })).toBeInTheDocument();
   });
 
+  it('renders all four sections below the person head from one getCv() call, in the order received', async () => {
+    mockedGetCv.mockResolvedValue({
+      ...cv,
+      experiences: [
+        { company: 'Older', role: 'R', location: null, startDate: '2010-01-01', endDate: '2011-01-01', description: null },
+        { company: 'Newer', role: 'R', location: null, startDate: '2020-01-01', endDate: null, description: null },
+      ],
+      education: [{ institution: 'UNED', degree: 'BSc', fieldOfStudy: null, startDate: '2015-09-01', endDate: '2019-06-30' }],
+      skills: [{ name: 'TypeScript', category: 'Languages', proficiency: 'EXPERT' }],
+      projects: [{ name: 'cv-project', description: null, repoUrl: null, startDate: null, endDate: null }],
+    });
+
+    const { container } = render(await HomePage());
+
+    expect(mockedGetCv).toHaveBeenCalledTimes(1);
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings).toEqual(['Experience', 'Education', 'Skills', 'Projects']);
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Jane Doe' });
+    expect(h1.compareDocumentPosition(screen.getByRole('heading', { name: 'Experience' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const text = container.textContent ?? '';
+    expect(text.indexOf('Older')).toBeLessThan(text.indexOf('Newer'));
+  });
+
+  it('omits a section whose array is empty', async () => {
+    mockedGetCv.mockResolvedValue({
+      ...cv,
+      skills: [{ name: 'TypeScript', category: null, proficiency: 'EXPERT' }],
+    });
+
+    render(await HomePage());
+
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual(['Skills']);
+  });
+
   it('renders the "unavailable" alert when the BFF answers non-2xx (CvFetchError)', async () => {
     mockedGetCv.mockRejectedValue(new CvFetchError('BFF responded 503', 503));
 
