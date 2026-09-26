@@ -2,6 +2,10 @@ import { loadCv } from '../application/loadCv';
 import { Cv } from '../domain/cv';
 import { BffCvRepository } from '../infrastructure/BffCvRepository';
 
+// The adapter's typed failures, re-exported so app/ can tell them apart
+// without importing infrastructure directly.
+export { CvFetchError, CvPayloadError } from '../infrastructure/BffCvRepository';
+
 /**
  * Composition root — the ONLY module that reads environment variables and
  * wires concrete adapters into the use case. Everything above this layer

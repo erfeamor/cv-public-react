@@ -10,9 +10,9 @@
  * an optional field is always a PRESENT key whose empty value is `null` — the
  * key is never missing — so `?:` described a shape the BFF does not send, and a
  * bare `string` (which `Skill.category` and `Project.startDate` used to be) was
- * an outright lie: `BffCvRepository` casts the response with no runtime
+ * an outright lie: `BffCvRepository` then cast the response with no runtime
  * validation, so a `null` reached a `string`-typed field with nothing able to
- * warn. `endDate` is `string | null` for a different reason — rule 3 gives its
+ * warn. (It validates at the boundary since T-409.) `endDate` is `string | null` for a different reason — rule 3 gives its
  * null the meaning "current", which rule 7 explicitly does not govern.
  *
  * The full aggregate is typed now so the app is ready to scale, even though the

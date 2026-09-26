@@ -1,4 +1,4 @@
-import { getCv } from '../src/composition/container';
+import { CvPayloadError, getCv } from '../src/composition/container';
 import PersonHeader from '../src/presentation/components/PersonHeader';
 
 /**
@@ -19,7 +19,14 @@ export default async function HomePage() {
   let cv;
   try {
     cv = await getCv();
-  } catch {
+  } catch (error) {
+    // A contract-violating payload is rethrown, not shown as "unavailable":
+    // under ISR a throw during background revalidation makes Next keep serving
+    // the last good page (and log the error), while a first build against a
+    // bad payload fails. That is the "fail loudly" a live page can do (T-409).
+    // Anything else -- CvFetchError on a non-2xx, or an unreachable BFF --
+    // keeps the alert, so a BFF that is down at build time still prerenders.
+    if (error instanceof CvPayloadError) throw error;
     return (
       <p role="alert" className="load-error">
         This CV is temporarily unavailable. Please try again later.
