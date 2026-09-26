@@ -37,8 +37,10 @@ genuinely needs browser interactivity).
     or `email` — the BFF strips those from public payloads.
   - `ports.ts`: `CvRepository` with `getCv(personId): Promise<Cv>`.
 - `src/application/` — `loadCv(repository, personId)`: framework-free use case
-  (no Next, no fetch, no env). Thin but real — the seam for future cross-section
-  logic (ordering, filtering empty sections) without touching other layers.
+  (no Next, no fetch, no env). A passthrough, kept as the seam for future
+  cross-section logic without touching other layers. It does **not** order
+  (ordering lives nowhere in this repo — see below) and does **not** filter
+  empty sections (each section component does that — T-402 H1).
 - `src/infrastructure/` — `BffCvRepository implements CvRepository`: server-side
   `fetch` of `${BFF_URL}/bff/api/v1/people/:id/cv` with `next: { revalidate }`, maps
   the payload to the domain `Cv`, throws a typed `CvFetchError` on non-2xx.
@@ -53,8 +55,11 @@ genuinely needs browser interactivity).
 
 **Adding a section** (experiences, education, skills, projects — shapes already
 typed in `domain/cv.ts`): render it in a new presentational component, compose it
-in `app/page.tsx`, and add ordering/filtering in the `loadCv` use case if needed.
-Each layer gets its own test.
+in `app/page.tsx`. The component returns `null` for an empty array (no empty
+heading) and tests it (T-402 H1). Ordering lives **nowhere** in this repo: render
+in the order received — the domain service orders (meta-repo `docs/api-contract.md`
+§ Ordering), and `src/presentation/components/conventions.test.ts` fails on any
+`.sort(`/`.toSorted(` in `src/`. Each layer gets its own test.
 
 ## ISR / data flow
 

@@ -75,3 +75,62 @@ body {
   padding: 1.25rem 1.5rem;
   color: var(--fg);
 }
+
+.cv-section {
+  margin-top: 2.5rem;
+}
+
+.cv-section h2 {
+  margin: 0 0 1rem;
+  font-size: 1.35rem;
+  border-bottom: 1px solid var(--muted);
+  padding-bottom: 0.35rem;
+}
+
+.cv-section ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cv-entry {
+  margin-bottom: 1.5rem;
+}
+
+.cv-entry h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.cv-entry p {
+  margin: 0.25rem 0 0;
+}
+
+.cv-period,
+.cv-location,
+.cv-field,
+.cv-skill-category {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.cv-project-repo a {
+  color: var(--accent);
+}
+
+.cv-skills ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cv-skills li {
+  background: var(--card);
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.cv-skill-name {
+  font-weight: 600;
+}
