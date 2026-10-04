@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { Cv } from '../src/domain/cv';
-import { CvFetchError, CvPayloadError, getCv } from '../src/composition/container';
+import { BffConfigError, CvFetchError, CvPayloadError, getCv } from '../src/composition/container';
 import HomePage from './page';
 
 jest.mock('../src/composition/container', () => ({
@@ -114,6 +114,31 @@ describe('HomePage', () => {
       await expect(HomePage()).rejects.toBeInstanceOf(CvPayloadError);
     } finally {
       global.fetch = originalFetch;
+    }
+  });
+
+  // T-404 (H1): a missing/malformed BFF_URL must fail `next build` (the page is
+  // prerendered there), not render the alert and ship it under ISR.
+  it('rethrows a BffConfigError instead of rendering the alert', async () => {
+    const error = new BffConfigError('BFF_URL is not set');
+    mockedGetCv.mockRejectedValue(error);
+
+    await expect(HomePage()).rejects.toBe(error);
+  });
+
+  it('rethrows through the real composition root in production with BFF_URL unset', async () => {
+    const originalEnv = process.env;
+    process.env = { ...originalEnv, VERCEL_ENV: 'production' };
+    delete process.env.BFF_URL;
+    const { getCv: realGetCv } = jest.requireActual<typeof import('../src/composition/container')>(
+      '../src/composition/container',
+    );
+    mockedGetCv.mockImplementation(realGetCv);
+
+    try {
+      await expect(HomePage()).rejects.toBeInstanceOf(BffConfigError);
+    } finally {
+      process.env = originalEnv;
     }
   });
 });

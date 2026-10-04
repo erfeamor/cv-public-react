@@ -1,4 +1,4 @@
-import { CvPayloadError, getCv } from '../src/composition/container';
+import { BffConfigError, CvPayloadError, getCv } from '../src/composition/container';
 import EducationSection from '../src/presentation/components/EducationSection';
 import ExperienceSection from '../src/presentation/components/ExperienceSection';
 import PersonHeader from '../src/presentation/components/PersonHeader';
@@ -33,6 +33,10 @@ export default async function HomePage() {
     // Anything else -- CvFetchError on a non-2xx, or an unreachable BFF --
     // keeps the alert, so a BFF that is down at build time still prerenders.
     if (error instanceof CvPayloadError) throw error;
+    // A missing/malformed BFF_URL is a deploy misconfiguration, not an outage:
+    // rethrown so the prerender at `next build` fails and the deploy never
+    // ships a cached alert (T-404).
+    if (error instanceof BffConfigError) throw error;
     return (
       <p role="alert" className="load-error">
         This CV is temporarily unavailable. Please try again later.

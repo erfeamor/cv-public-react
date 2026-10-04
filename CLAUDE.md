@@ -78,7 +78,9 @@ Server-side only — **never** `NEXT_PUBLIC_*` (these must not reach the client)
 read only in `src/composition/container.ts`. Provide via `.env` (see
 `.env.example`):
 
-- `BFF_URL` (default `http://localhost:3000`) — cv-bff-node base URL.
+- `BFF_URL` (default `http://localhost:3000`) — cv-bff-node **bare origin** (no
+  trailing slash, no path). Required in production builds; see the Vercel
+  section.
 - `PERSON_ID` (default `1`) — which person's CV to render.
 
 ## Testing conventions
@@ -108,6 +110,26 @@ it runs identically on Vercel.
 
 Set `BFF_URL` and `PERSON_ID` as Project Environment Variables in the Vercel
 dashboard (server-side, not `NEXT_PUBLIC_*`).
+
+**Production value (T-404, set 2026-10-04):**
+`BFF_URL = https://dvdlxl0zqepqi.cloudfront.net` — the bare CloudFront origin,
+**no trailing slash, no path** (`BffCvRepository` appends
+`/bff/api/v1/people/:id/cv` itself, T-406). This setting lives only in the
+Vercel dashboard, invisible to git and Terraform — this line is its record.
+Vercel bakes env into a deployment, so **changing it needs a redeploy** to take
+effect; verify by loading the production page, not by reading the setting.
+
+**A misconfigured `BFF_URL` fails the build** (`resolveBffUrl` in
+`src/composition/container.ts` throws `BffConfigError`, which `app/page.tsx`
+rethrows, so the prerender at `next build` fails):
+
+- `VERCEL_ENV=production` with `BFF_URL` unset or blank → build fails (instead of
+  shipping a page that fetched `localhost:3000` and cached the alert under ISR).
+- Any environment, `BFF_URL` with a trailing slash or a `/bff…` path → build
+  fails (a value that looks right but 404s).
+- Previews and local dev with `BFF_URL` unset fall back to
+  `http://localhost:3000` (a preview then renders the alert; the PR's build gate
+  is not blocked on a dashboard setting).
 
 ## Code review guidance
 
