@@ -112,12 +112,16 @@ Set `BFF_URL` and `PERSON_ID` as Project Environment Variables in the Vercel
 dashboard (server-side, not `NEXT_PUBLIC_*`).
 
 **Production value (T-404, set 2026-10-04):**
-`BFF_URL = https://dvdlxl0zqepqi.cloudfront.net` — the bare CloudFront origin,
+`BFF_URL = https://erfeamor.com` (T-410, set 2026-11-07; was the bare
+`https://dvdlxl0zqepqi.cloudfront.net`, which still works) — the bare origin,
 **no trailing slash, no path** (`BffCvRepository` appends
 `/bff/api/v1/people/:id/cv` itself, T-406). This setting lives only in the
 Vercel dashboard, invisible to git and Terraform — this line is its record.
 Vercel bakes env into a deployment, so **changing it needs a redeploy** to take
 effect; verify by loading the production page, not by reading the setting.
+The site is served at `https://react.erfeamor.com` (Vercel custom domain; the
+`react` CNAME is in cv-infra `domain.tf`, and `erfeamor.com/react` 301s to it);
+`metadataBase` in `app/layout.tsx` is that origin.
 
 **A misconfigured `BFF_URL` fails the build** (`resolveBffUrl` in
 `src/composition/container.ts` throws `BffConfigError`, which `app/page.tsx`
